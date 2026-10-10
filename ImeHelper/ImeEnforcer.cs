@@ -8,7 +8,7 @@ namespace ImeHelper;
 internal sealed class ImeEnforcer : IDisposable
 {
     private const int LANG_JAPANESE = 0x0411;
-    private const int PollIntervalMs = 100;
+    public const int DefaultIntervalMs = 500;
 
     private readonly System.Windows.Forms.Timer _timer;
     private readonly WinEventDelegate _winEventProc; // GC されないよう保持
@@ -17,9 +17,16 @@ internal sealed class ImeEnforcer : IDisposable
 
     public ImeEnforcer()
     {
-        _timer = new System.Windows.Forms.Timer { Interval = PollIntervalMs };
+        _timer = new System.Windows.Forms.Timer { Interval = DefaultIntervalMs };
         _timer.Tick += (_, _) => Enforce();
         _winEventProc = OnForegroundChanged;
+    }
+
+    /// <summary>ポーリング間隔 (ミリ秒)。</summary>
+    public int IntervalMs
+    {
+        get => _timer.Interval;
+        set => _timer.Interval = Math.Max(50, value);
     }
 
     public bool Enabled

@@ -26,6 +26,8 @@ internal sealed class TrayContext : ApplicationContext
     private readonly NotifyIcon _tray;
     private readonly ToolStripMenuItem _enabledItem;
     private readonly ToolStripMenuItem _startupItem;
+    private readonly ToolStripMenuItem _highFreqItem;
+    private readonly ToolStripMenuItem _normalFreqItem;
     private readonly Icon _iconOn = CreateIcon(Color.FromArgb(0, 120, 215));
     private readonly Icon _iconOff = CreateIcon(Color.Gray);
 
@@ -37,8 +39,17 @@ internal sealed class TrayContext : ApplicationContext
             Checked = IsStartupRegistered()
         };
 
+        _highFreqItem = new ToolStripMenuItem("高頻度 (0.1秒)", null,
+            (_, _) => SetInterval(Settings.HighFrequencyIntervalMs));
+        _normalFreqItem = new ToolStripMenuItem("標準 (0.5秒)", null,
+            (_, _) => SetInterval(Settings.NormalIntervalMs));
+        var intervalMenu = new ToolStripMenuItem("チェック間隔");
+        intervalMenu.DropDownItems.Add(_highFreqItem);
+        intervalMenu.DropDownItems.Add(_normalFreqItem);
+
         var menu = new ContextMenuStrip();
         menu.Items.Add(_enabledItem);
+        menu.Items.Add(intervalMenu);
         menu.Items.Add(_startupItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("終了", null, (_, _) => ExitThread());
@@ -49,6 +60,7 @@ internal sealed class TrayContext : ApplicationContext
             if (e.Button == MouseButtons.Left) SetEnabled(!_enforcer.Enabled);
         };
 
+        ApplyInterval(Settings.IntervalMs);
         SetEnabled(true);
     }
 
@@ -58,6 +70,19 @@ internal sealed class TrayContext : ApplicationContext
         _enabledItem.Checked = enabled;
         _tray.Icon = enabled ? _iconOn : _iconOff;
         _tray.Text = enabled ? "ImeHelper: 日本語IME 常時ON (有効)" : "ImeHelper: 停止中";
+    }
+
+    private void SetInterval(int ms)
+    {
+        Settings.IntervalMs = ms;
+        ApplyInterval(ms);
+    }
+
+    private void ApplyInterval(int ms)
+    {
+        _enforcer.IntervalMs = ms;
+        _highFreqItem.Checked = ms == Settings.HighFrequencyIntervalMs;
+        _normalFreqItem.Checked = ms == Settings.NormalIntervalMs;
     }
 
     private static bool IsStartupRegistered()
