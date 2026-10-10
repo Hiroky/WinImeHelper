@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  PROJECT: ImeHelper/ImeHelper.csproj
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.rid }}, ${{ matrix.flavor }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        rid: [win-x64, win-arm64]
+        flavor: [self-contained, framework-dependent]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
+          $version = $tag -replace '^v', ''
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          $sc = if ("${{ matrix.flavor }}" -eq "self-contained") { "true" } else { "false" }
+          $extra = if ($sc -eq "true") { @("-p:EnableCompressionInSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true") } else { @() }
+          dotnet publish $env:PROJECT -c Release -r ${{ matrix.rid }} `
+            --self-contained $sc `
+            -p:PublishSingleFile=true `
+            -p:DebugType=none `
+            -p:Version=${{ steps.ver.outputs.version }} `
+            @extra `
+            -o publish
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $suffix = if ("${{ matrix.flavor }}" -eq "self-contained") { "" } else { "-fx" }
+          $name = "ImeHelper-${{ steps.ver.outputs.tag }}-${{ matrix.rid }}$suffix.zip"
+          Copy-Item README.md publish/
+          Compress-Archive -Path publish/* -DestinationPath $name
+          "ASSET=$name" >> $env:GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET }}
+          path: ${{ env.ASSET }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" dist/*.zip \
+            --repo "${{ github.repository }}" \
+            --title "$TAG" \
+            --generate-notes \
+            --target "${{ github.sha }}"
